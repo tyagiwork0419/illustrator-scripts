@@ -1,12 +1,16 @@
-// CreateCornerTombo.jsx
-// 角のみトンボ(二重線: 内トンボ+外トンボ)を選択オブジェクトのバウンディングボックスに作成する
+﻿// CreateCornerTombo.jsx
+// 選択オブジェクトのバウンディングボックスの角に、日本式トンボ(内トンボ+外トンボが
+// たすき掛けに重なる二重線)の角トンボを作成する。中央のセンタートンボ(十字マーク)は作成しない。
+// 各角の座標は、Illustrator純正の「トリムマークを作成」(日本式トンボ設定)が実際に生成する
+// パスを実測して求めたもの(仕上がり線からのアキ0.5pt、塗り足し3mm、腕の長さ9mm)。
 // 対象: Adobe Illustrator CS6
 #target illustrator
 
 (function () {
-  var BLEED_MM = 3;      // 塗り足し量
-  var MARK_LEN_MM = 3;   // トンボ線の長さ
-  var STROKE_MM = 0.1;   // トンボ線の太さ
+  var BLEED_MM = 3;    // 塗り足し量
+  var ARM_LEN_MM = 9;  // トンボの腕の長さ(塗り足し線からの延長分)
+  var GAP_PT = 0.5;    // 仕上がり線からのアキ
+  var STROKE_MM = 0.1; // トンボ線の太さ
 
   function mm2pt(mm) {
     return mm * 2.834645669291339;
@@ -36,13 +40,7 @@
     }
   }
 
-  function addLBracket(parent, cx, cy, sx, sy, lenPt, strokeColor, strokeWidthPt) {
-    var p = parent.pathItems.add();
-    p.setEntirePath([
-      [cx + sx * lenPt, cy],
-      [cx, cy],
-      [cx, cy + sy * lenPt]
-    ]);
+  function applyStrokeStyle(p, strokeColor, strokeWidthPt) {
     p.filled = false;
     p.stroked = true;
     p.strokeColor = strokeColor;
@@ -52,14 +50,29 @@
     try {
       p.strokeOverprint = true;
     } catch (e) {}
+  }
+
+  function addPath(parent, points, strokeColor, strokeWidthPt) {
+    var p = parent.pathItems.add();
+    p.setEntirePath(points);
+    applyStrokeStyle(p, strokeColor, strokeWidthPt);
     return p;
   }
 
-  function makeCornerBracket(parent, cx, cy, sx, sy, bleedPt, markPt, strokeColor, strokeWidthPt) {
-    // 内トンボ(仕上がり位置)
-    addLBracket(parent, cx, cy, sx, sy, markPt, strokeColor, strokeWidthPt);
-    // 外トンボ(塗り足し位置)
-    addLBracket(parent, cx + sx * bleedPt, cy + sy * bleedPt, sx, sy, markPt, strokeColor, strokeWidthPt);
+  // 仕上がり角(cx, cy)を基準に、日本式の角トンボ(L字2本がたすき掛けに重なる形)を作成する
+  // r1: 仕上がり線からのアキ / r2: 塗り足し線の位置 / r3: 腕の先端位置(いずれも仕上がり角からの距離)
+  function makeCornerMark(parent, cx, cy, sx, sy, r1, r2, r3, strokeColor, strokeWidthPt) {
+    addPath(parent, [
+      [cx + sx * r1, cy + sy * r3],
+      [cx + sx * r1, cy + sy * r2],
+      [cx + sx * r3, cy + sy * r2]
+    ], strokeColor, strokeWidthPt);
+
+    addPath(parent, [
+      [cx + sx * r3, cy + sy * r1],
+      [cx + sx * r2, cy + sy * r1],
+      [cx + sx * r2, cy + sy * r3]
+    ], strokeColor, strokeWidthPt);
   }
 
   function main() {
@@ -84,8 +97,9 @@
       if (bottom === null || b[3] < bottom) bottom = b[3];
     }
 
-    var bleedPt = mm2pt(BLEED_MM);
-    var markPt = mm2pt(MARK_LEN_MM);
+    var r1 = GAP_PT;
+    var r2 = GAP_PT + mm2pt(BLEED_MM);
+    var r3 = r2 + mm2pt(ARM_LEN_MM);
     var strokeWidthPt = mm2pt(STROKE_MM);
     var strokeColor = getRegistrationColor(doc);
 
@@ -102,7 +116,7 @@
 
     for (var c = 0; c < corners.length; c++) {
       var cn = corners[c];
-      makeCornerBracket(group, cn.cx, cn.cy, cn.sx, cn.sy, bleedPt, markPt, strokeColor, strokeWidthPt);
+      makeCornerMark(group, cn.cx, cn.cy, cn.sx, cn.sy, r1, r2, r3, strokeColor, strokeWidthPt);
     }
 
     doc.selection = null;
