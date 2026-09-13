@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This repository is a personal collection of Adobe Illustrator scripts (ExtendScript / `.jsx`), synced across multiple machines by cloning/pulling this repo. There is no build system, package manager, or test suite — each file in `scripts/` is a standalone script installed directly into Illustrator's Scripts folder and run from Illustrator's `File > Scripts` menu. Rarely-used scripts live in `scripts/extra/` (documented in their own separate section in `README.md`) rather than being deleted.
+This repository is a personal collection of Adobe Illustrator scripts (ExtendScript / `.jsx`), synced across multiple machines by cloning/pulling this repo. There is no build system, package manager, or test suite — each file in `scripts/` is a standalone script installed directly into Illustrator's Scripts folder and run from Illustrator's `File > Scripts` menu. Rarely-used scripts live in `scripts/extra/`, and multi-script tools with dependencies between the scripts live in their own subfolder (e.g. `scripts/signage/`) — both documented in their own separate section in `README.md` — rather than being deleted or flattened into `scripts/`.
 
 - Target environment: Adobe Illustrator CS6 (ExtendScript engine, roughly ES3/JS1.5 — no `let`/`const`, arrow functions, template literals, or other modern ES syntax)
 - Install path (copy `.jsx` files here, then restart Illustrator):

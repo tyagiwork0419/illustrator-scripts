@@ -1,6 +1,8 @@
 ﻿// NestShapesInArtboard.jsx
 // 選択した複数の図形(曲線を含む自由な形状)を、実際の輪郭が重ならない範囲で、
 // 現在のアートボードの範囲内にできるだけ詰めて配置する(回転も考慮した実形状ネスティング)
+// 配置後、配置済み図形全体のバウンディングボックスをアートボードの左上角に寄せることで、
+// まとまった空きスペースが残りやすいようにする。
 // PackShapesInArtboard.jsx との違い: バウンディングボックスではなく実際の輪郭で衝突判定を行う。
 // そのぶん計算量が多く、図形数・曲線の複雑さ・グリッドの細かさによっては時間がかかる。
 // 複合パスやグループ内の穴(内側のパス)は、空きスペースとしては扱わず障害物として扱う。
@@ -307,6 +309,7 @@
 
     var placedPolys = [];
     var placedBounds = [];
+    var placedItems = [];
     var overflowed = 0;
 
     for (var n = 0; n < items.length; n++) {
@@ -363,6 +366,24 @@
       var finalPolys = transformPolygons(actualPolys, 0, [0, 0], moveDx, moveDy);
       placedPolys.push(finalPolys);
       placedBounds.push(boundsOfMulti(finalPolys));
+      placedItems.push(it.item);
+    }
+
+    // 配置済み図形全体のバウンディングボックスを、アートボードの左上角に寄せる
+    // (個々の配置の相対位置関係は変えず、全体をまとめて平行移動するだけ)
+    if (placedItems.length > 0) {
+      var overallMinX = null, overallMaxY = null;
+      for (var q = 0; q < placedBounds.length; q++) {
+        if (overallMinX === null || placedBounds[q].minX < overallMinX) overallMinX = placedBounds[q].minX;
+        if (overallMaxY === null || placedBounds[q].maxY > overallMaxY) overallMaxY = placedBounds[q].maxY;
+      }
+      var shiftDx = areaLeft - overallMinX;
+      var shiftDy = areaTop - overallMaxY;
+      if (shiftDx !== 0 || shiftDy !== 0) {
+        for (var s = 0; s < placedItems.length; s++) {
+          placedItems[s].translate(shiftDx, shiftDy);
+        }
+      }
     }
 
     var message = "";
