@@ -1,4 +1,4 @@
-﻿// CreateSampleDocument.jsx (テスト用・GenerateVariableSigns.jsx / GenerateMapLabels.jsx の動作確認用)
+﻿// CreateSampleDocument.jsx (テスト用・GenerateSignsFromCsv.jsx / GenerateMapLabels.jsx の動作確認用)
 // 新規ドキュメントを作成し、「テンプレート」レイヤーに看板テンプレートを1つ、
 // 「地図」レイヤーに会場の枠を作成する。
 // 同じフォルダの sample-data.csv と組み合わせて、看板生成〜地図配置の一連の流れを試せる。
@@ -98,7 +98,7 @@
       "サンプルデータを作成しました。\n" +
       "・「テンプレート」レイヤー: 看板テンプレート(選択済み。テキストフレーム名は「企業名」「業種」)\n" +
       "・「地図」レイヤー: 会場の枠\n\n" +
-      "この状態で GenerateVariableSigns.jsx を実行し、同じフォルダの sample-data.csv を指定してください。\n" +
+      "この状態で GenerateSignsFromCsv.jsx を実行し、同じフォルダの sample-data.csv を指定してください。\n" +
       "地図配置を試す場合は GenerateMapLabels.jsx を実行し、生成されたラベルを「地図」レイヤーの会場の枠内へドラッグしてください。"
     );
   }

@@ -1,29 +1,22 @@
-﻿// GenerateVariableSigns.jsx
-// 選択した看板テンプレートのテキストフレームに、Illustrator標準の「変数」を自動で割り当て、
-// CSVの行ごとに (1) 「データセット」の作成 と (2) テンプレートの複製+テキスト書き込み の両方を行う。
+﻿// GenerateSignsFromCsv.jsx
+// 選択した看板テンプレートを、CSVの行ごとに複製してテキストを書き込み、「生成した看板」レイヤーに配置する。
 //
-// (1) マスターテンプレート側は変数にCSVの値を流し込みながらデータセットを作成するので、
-//     生成後も「ウィンドウ > 変数」パネルから各データセットを選んでプレビュー・手直しできる。
-// (2) 実際に並べて印刷するための実体として、行ごとに看板を複製して「生成した看板」レイヤーに配置する。
-//     複製側のテキストは(変数のバインドには頼らず)直接書き込んだ静的な内容になる。
-//
-// CSVを直してこのスクリプトを再実行した場合、同じID(データセット名・「看板_<ID>」)が
-// 既にあれば新しく増やさず中身だけ更新する。位置や大きさなど手動で調整した内容は保持される。
+// CSVを直してこのスクリプトを再実行した場合、同じID(「看板_<ID>」)が既にあれば
+// 新しく増やさず中身だけ更新する。位置や大きさなど手動で調整した内容は保持される。
 //
 // 使い方:
 //   1. 看板テンプレート内の、差し替えたいテキストフレームに、CSVの列名と完全に同じ名前を付けておく
-//      (例: テキストフレーム名「会社名」⇔CSVの列「会社名」)。変数がまだ割り当てられていなければ自動で作成・割り当てる
-//   2. Excelのデータを「CSV UTF-8(コンマ区切り)」形式で書き出す。列名の1つを「ID」にする(データセット名・複製オブジェクト名に使う)
+//      (例: テキストフレーム名「会社名」⇔CSVの列「会社名」)
+//   2. Excelのデータを「CSV UTF-8(コンマ区切り)」形式で書き出す。列名の1つを「ID」にする(複製オブジェクト名に使う)
 //   3. テンプレートを選択してこのスクリプトを実行し、CSVファイルを指定する
-//   4. 「生成した看板」レイヤーに複製が並ぶ。マスターテンプレート側は「ウィンドウ > 変数」パネルから
-//      各データセットを選んでプレビュー・手直しできる。CSVを直したら、同じテンプレートを選んで
-//      再実行すれば、既存の看板・データセットの中身だけが更新される
+//   4. 「生成した看板」レイヤーに複製が並ぶ。CSVを直したら、同じテンプレートを選んで
+//      再実行すれば、既存の看板の中身だけが更新される
 //
 // 対象: Adobe Illustrator CS6
 #target illustrator
 
 (function () {
-  var ID_COLUMN_NAME = "ID"; // データセット名・複製オブジェクト名に使う特別な列名(大文字小文字は区別しない)
+  var ID_COLUMN_NAME = "ID"; // 複製オブジェクト名に使う特別な列名(大文字小文字は区別しない)
   var RESULT_LAYER_NAME = "生成した看板";
   var SIGN_NAME_PREFIX = "看板_";
   var CASCADE_OFFSET_MM = 5; // 複製した看板どうしが完全に重ならないよう、1件ごとにずらす量
@@ -172,31 +165,6 @@
     return null;
   }
 
-  // 名前が一致する既存データセットを探す(無ければnull)
-  function findDataSetByName(doc, name) {
-    for (var i = 0; i < doc.dataSets.length; i++) {
-      if (doc.dataSets[i].name === name) return doc.dataSets[i];
-    }
-    return null;
-  }
-
-  // 名前に対応する変数を取得(既存があれば流用、なければ新規作成)。
-  // 既存だがテキスト用ではない場合は null を返す。
-  function getOrCreateTextVariable(doc, name) {
-    try {
-      var v = doc.variables.getByName(name);
-      if (v.kind !== VariableKind.TEXTUAL) {
-        return null;
-      }
-      return v;
-    } catch (e) {
-      var nv = doc.variables.add();
-      nv.name = name;
-      nv.kind = VariableKind.TEXTUAL;
-      return nv;
-    }
-  }
-
   function main() {
     if (app.documents.length === 0) {
       alert("ドキュメントを開いてください。");
@@ -221,43 +189,24 @@
 
     var idKey = findIdColumnKey(csv.headers);
     if (!idKey) {
-      alert("CSVに「" + ID_COLUMN_NAME + "」列が見つかりません。データセット名に使う列名を「" + ID_COLUMN_NAME + "」にしてください。");
+      alert("CSVに「" + ID_COLUMN_NAME + "」列が見つかりません。複製オブジェクト名に使う列名を「" + ID_COLUMN_NAME + "」にしてください。");
       return;
     }
 
-    var frames = {};
-    collectNamedTextFrames(template, frames);
+    var templateFrames = {};
+    collectNamedTextFrames(template, templateFrames);
 
-    // テンプレート内の名前付きテキストフレームのうち、CSVの列名と一致するものに変数を割り当てる
-    var boundFrames = {};
-    var skippedFrameNames = [];
-    for (var key in frames) {
+    var matchedCount = 0;
+    for (var key in templateFrames) {
       if (key === idKey) continue;
-      var isColumn = false;
       for (var h = 0; h < csv.headers.length; h++) {
         if (csv.headers[h] === key) {
-          isColumn = true;
+          matchedCount++;
           break;
         }
       }
-      if (!isColumn) continue;
-
-      var variable = getOrCreateTextVariable(doc, key);
-      if (!variable) {
-        skippedFrameNames.push(key);
-        continue;
-      }
-      frames[key].contentVariable = variable;
-      boundFrames[key] = frames[key];
     }
-
-    if (skippedFrameNames.length > 0) {
-      alert("以下の名前は既にテキスト用ではない変数として存在するため、割り当てをスキップしました:\n" + skippedFrameNames.join(", "));
-    }
-
-    var boundCount = 0;
-    for (var bk in boundFrames) boundCount++;
-    if (boundCount === 0) {
+    if (matchedCount === 0) {
       alert("テンプレート内に、CSVの列名と一致する名前のテキストフレームが見つかりませんでした。");
       return;
     }
@@ -265,9 +214,9 @@
     var resultLayer = getOrCreateLayer(doc, RESULT_LAYER_NAME);
     var offsetPt = mm2pt(CASCADE_OFFSET_MM);
 
-    // CSVの行ごとに、(1)マスターテンプレートの変数値を更新してデータセットを作成/更新し、
-    // (2)看板を複製(または既存のものを更新)してテキストを直接書き込み、「生成した看板」レイヤーに配置する。
-    // 同じIDの看板・データセットが既にあれば、新しく増やすのではなく中身だけ差し替える
+    // CSVの行ごとに、看板を複製(または既存のものを更新)してテキストを直接書き込み、
+    // 「生成した看板」レイヤーに配置する。
+    // 同じIDの看板が既にあれば、新しく増やすのではなく中身だけ差し替える
     // (CSVを直して再実行したときに、既存のIllustrator上のデータも追従するようにするため)
     var createdCount = 0;
     var updatedCount = 0;
@@ -280,23 +229,6 @@
         continue;
       }
 
-      // (1) マスターテンプレート側: 変数を更新し、既存データセットがあれば上書き、無ければ新規作成
-      for (var key2 in boundFrames) {
-        if (rec[key2] !== undefined) {
-          boundFrames[key2].contents = rec[key2];
-        }
-      }
-      try {
-        var existingDs = findDataSetByName(doc, id);
-        if (existingDs) {
-          existingDs.update();
-        } else {
-          var ds = doc.dataSets.add();
-          ds.name = id;
-        }
-      } catch (e) {}
-
-      // (2) 複製側: 既存の「看板_<ID>」があればテキストだけ差し替え、無ければ新規複製
       var signName = SIGN_NAME_PREFIX + id;
       var target = findItemByName(resultLayer, signName);
       if (target) {
@@ -310,26 +242,18 @@
 
       var dupFrames = {};
       collectNamedTextFrames(target, dupFrames);
-      for (var key3 in dupFrames) {
-        if (rec[key3] !== undefined) {
-          dupFrames[key3].contents = rec[key3];
+      for (var key2 in dupFrames) {
+        if (rec[key2] !== undefined) {
+          dupFrames[key2].contents = rec[key2];
         }
       }
     }
 
-    // マスターテンプレートは1件目のデータセットを表示し、見た目を分かりやすい状態に戻す
-    try {
-      if (doc.dataSets.length > 0) {
-        doc.dataSets[0].display();
-      }
-    } catch (e) {}
-
     var message = "";
     if (createdCount > 0) message += createdCount + "件の看板を新規作成しました。\n";
     if (updatedCount > 0) message += updatedCount + "件の既存の看板の内容を更新しました。\n";
-    message += "マスターテンプレート側は「ウィンドウ > 変数」パネルから、各データセットを選んでプレビュー・手直しできます。";
     if (skippedNoId > 0) {
-      message += "\nID未設定のため" + skippedNoId + "件をスキップしました。";
+      message += "ID未設定のため" + skippedNoId + "件をスキップしました。";
     }
     alert(message);
   }
