@@ -1,21 +1,32 @@
 ﻿// GenerateVariableSigns.jsx
 // 選択した看板テンプレートのテキストフレームに、Illustrator標準の「変数」を自動で割り当て、
-// CSVの行ごとに「データセット」を作成する(Illustrator標準の変数パネル/データセット機能を使用)。
-// PlaceSignsOnMap.jsx とは異なり、複製は行わない。生成後は「ウィンドウ > 変数」パネルから
-// 各データセットを切り替えてプレビュー・手直しできる(データはテンプレートと紐づいたまま)。
+// CSVの行ごとに (1) 「データセット」の作成 と (2) テンプレートの複製+テキスト書き込み の両方を行う。
+//
+// (1) マスターテンプレート側は変数にCSVの値を流し込みながらデータセットを作成するので、
+//     生成後も「ウィンドウ > 変数」パネルから各データセットを選んでプレビュー・手直しできる。
+// (2) 実際に並べて印刷するための実体として、行ごとに看板を複製して「生成した看板」レイヤーに配置する。
+//     複製側のテキストは(変数のバインドには頼らず)直接書き込んだ静的な内容になる。
 //
 // 使い方:
 //   1. 看板テンプレート内の、差し替えたいテキストフレームに、CSVの列名と完全に同じ名前を付けておく
 //      (例: テキストフレーム名「会社名」⇔CSVの列「会社名」)。変数がまだ割り当てられていなければ自動で作成・割り当てる
-//   2. Excelのデータを「CSV UTF-8(コンマ区切り)」形式で書き出す。列名の1つを「ID」にする(データセット名に使う)
+//   2. Excelのデータを「CSV UTF-8(コンマ区切り)」形式で書き出す。列名の1つを「ID」にする(データセット名・複製オブジェクト名に使う)
 //   3. テンプレートを選択してこのスクリプトを実行し、CSVファイルを指定する
-//   4. 実行後は「ウィンドウ > 変数」パネルから、生成されたデータセットを選んでプレビュー・手直しできる
+//   4. 「生成した看板」レイヤーに複製が並ぶ。マスターテンプレート側は「ウィンドウ > 変数」パネルから
+//      各データセットを選んでプレビュー・手直しできる
 //
 // 対象: Adobe Illustrator CS6
 #target illustrator
 
 (function () {
-  var ID_COLUMN_NAME = "ID"; // データセット名に使う特別な列名(大文字小文字は区別しない)
+  var ID_COLUMN_NAME = "ID"; // データセット名・複製オブジェクト名に使う特別な列名(大文字小文字は区別しない)
+  var RESULT_LAYER_NAME = "生成した看板";
+  var SIGN_NAME_PREFIX = "看板_";
+  var CASCADE_OFFSET_MM = 5; // 複製した看板どうしが完全に重ならないよう、1件ごとにずらす量
+
+  function mm2pt(mm) {
+    return mm * 2.834645669291339;
+  }
 
   function trimStr(s) {
     return s.replace(/^\s+|\s+$/g, "");
@@ -139,6 +150,16 @@
     }
   }
 
+  function getOrCreateLayer(doc, name) {
+    try {
+      return doc.layers.getByName(name);
+    } catch (e) {
+      var layer = doc.layers.add();
+      layer.name = name;
+      return layer;
+    }
+  }
+
   // 名前に対応する変数を取得(既存があれば流用、なければ新規作成)。
   // 既存だがテキスト用ではない場合は null を返す。
   function getOrCreateTextVariable(doc, name) {
@@ -221,7 +242,11 @@
       return;
     }
 
-    // CSVの行ごとに、変数(に紐づくテキストフレーム)の値を設定してデータセットを作成する
+    var resultLayer = getOrCreateLayer(doc, RESULT_LAYER_NAME);
+    var offsetPt = mm2pt(CASCADE_OFFSET_MM);
+
+    // CSVの行ごとに、(1)マスターテンプレートの変数値を更新してデータセットを作成し、
+    // (2)看板を複製してテキストを直接書き込み、「生成した看板」レイヤーに配置する
     var createdCount = 0;
     var skippedNoId = 0;
     for (var r = 0; r < csv.records.length; r++) {
@@ -231,6 +256,8 @@
         skippedNoId++;
         continue;
       }
+
+      // (1) マスターテンプレート側: 変数を更新してデータセットを作成(変数パネルでのプレビュー用)
       for (var key2 in boundFrames) {
         if (rec[key2] !== undefined) {
           boundFrames[key2].contents = rec[key2];
@@ -239,19 +266,32 @@
       try {
         var ds = doc.dataSets.add();
         ds.name = id;
-        createdCount++;
       } catch (e) {}
+
+      // (2) 複製側: 変数バインドには頼らず、複製したテキストフレームへ直接内容を書き込む
+      var dup = template.duplicate(resultLayer, ElementPlacement.PLACEATEND);
+      dup.name = SIGN_NAME_PREFIX + id;
+      var dupFrames = {};
+      collectNamedTextFrames(dup, dupFrames);
+      for (var key3 in dupFrames) {
+        if (rec[key3] !== undefined) {
+          dupFrames[key3].contents = rec[key3];
+        }
+      }
+      dup.translate(offsetPt * createdCount, -offsetPt * createdCount);
+
+      createdCount++;
     }
 
-    // 最後に1件目のデータセットを表示し、見た目を分かりやすい状態に戻す
+    // マスターテンプレートは1件目のデータセットを表示し、見た目を分かりやすい状態に戻す
     try {
       if (doc.dataSets.length > 0) {
         doc.dataSets[0].display();
       }
     } catch (e) {}
 
-    var message = createdCount + "件のデータセットを作成しました。\n";
-    message += "「ウィンドウ > 変数」パネルから、各データセットを選んでプレビュー・手直しできます。";
+    var message = createdCount + "件の看板を「" + RESULT_LAYER_NAME + "」レイヤーに複製しました。\n";
+    message += "マスターテンプレート側は「ウィンドウ > 変数」パネルから、各データセットを選んでプレビュー・手直しできます。";
     if (skippedNoId > 0) {
       message += "\nID未設定のため" + skippedNoId + "件をスキップしました。";
     }
