@@ -36,6 +36,8 @@ New scripts should follow this same pattern unless there's a specific reason not
 
 When a script needs to match an exact native Illustrator visual (e.g. the precise geometry of a built-in mark or effect), don't guess the coordinates from memory or documentation — write a throwaway diagnostic script that runs the native feature (`app.executeMenuCommand("<internal command id>")`) and dumps the resulting path anchor points (relative to a known reference like the selection's bounding box), then have the user run it once in Illustrator and report the numbers back. Reproduce that measured geometry by hand rather than depending on the native command at runtime, so the result stays deterministic and inspectable. Delete the diagnostic script once its numbers are captured.
 
+Data-merge-style features (one template, many rows of data producing many variations) should use Illustrator's native Variables/Dataset API (`doc.variables`, `VariableKind.TEXTUAL`, `pageItem.contentVariable`, `doc.dataSets.add()`) rather than a custom template-duplication script — this is what `scripts/signage/GenerateVariableSigns.jsx` does. This part of the DOM is old, obscure, and easy to misremember (it predates the modern scripting reference and isn't covered in most tutorials), so verify method/property names against real documentation (e.g. the docsforadobe Illustrator scripting guide) before using it, the same way you'd verify a menu command id.
+
 ## Documentation
 
 `README.md` (Japanese) is the source of truth for what each script does, its default parameter values, and usage instructions. When adding or changing a script's behavior or defaults, update `README.md`'s per-script section to match.
