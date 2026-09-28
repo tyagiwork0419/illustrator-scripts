@@ -7,13 +7,17 @@
 // (2) 実際に並べて印刷するための実体として、行ごとに看板を複製して「生成した看板」レイヤーに配置する。
 //     複製側のテキストは(変数のバインドには頼らず)直接書き込んだ静的な内容になる。
 //
+// CSVを直してこのスクリプトを再実行した場合、同じID(データセット名・「看板_<ID>」)が
+// 既にあれば新しく増やさず中身だけ更新する。位置や大きさなど手動で調整した内容は保持される。
+//
 // 使い方:
 //   1. 看板テンプレート内の、差し替えたいテキストフレームに、CSVの列名と完全に同じ名前を付けておく
 //      (例: テキストフレーム名「会社名」⇔CSVの列「会社名」)。変数がまだ割り当てられていなければ自動で作成・割り当てる
 //   2. Excelのデータを「CSV UTF-8(コンマ区切り)」形式で書き出す。列名の1つを「ID」にする(データセット名・複製オブジェクト名に使う)
 //   3. テンプレートを選択してこのスクリプトを実行し、CSVファイルを指定する
 //   4. 「生成した看板」レイヤーに複製が並ぶ。マスターテンプレート側は「ウィンドウ > 変数」パネルから
-//      各データセットを選んでプレビュー・手直しできる
+//      各データセットを選んでプレビュー・手直しできる。CSVを直したら、同じテンプレートを選んで
+//      再実行すれば、既存の看板・データセットの中身だけが更新される
 //
 // 対象: Adobe Illustrator CS6
 #target illustrator
@@ -160,6 +164,22 @@
     }
   }
 
+  // レイヤー直下から、名前が一致する既存アイテムを探す(無ければnull)
+  function findItemByName(layer, name) {
+    for (var i = 0; i < layer.pageItems.length; i++) {
+      if (layer.pageItems[i].name === name) return layer.pageItems[i];
+    }
+    return null;
+  }
+
+  // 名前が一致する既存データセットを探す(無ければnull)
+  function findDataSetByName(doc, name) {
+    for (var i = 0; i < doc.dataSets.length; i++) {
+      if (doc.dataSets[i].name === name) return doc.dataSets[i];
+    }
+    return null;
+  }
+
   // 名前に対応する変数を取得(既存があれば流用、なければ新規作成)。
   // 既存だがテキスト用ではない場合は null を返す。
   function getOrCreateTextVariable(doc, name) {
@@ -245,9 +265,12 @@
     var resultLayer = getOrCreateLayer(doc, RESULT_LAYER_NAME);
     var offsetPt = mm2pt(CASCADE_OFFSET_MM);
 
-    // CSVの行ごとに、(1)マスターテンプレートの変数値を更新してデータセットを作成し、
-    // (2)看板を複製してテキストを直接書き込み、「生成した看板」レイヤーに配置する
+    // CSVの行ごとに、(1)マスターテンプレートの変数値を更新してデータセットを作成/更新し、
+    // (2)看板を複製(または既存のものを更新)してテキストを直接書き込み、「生成した看板」レイヤーに配置する。
+    // 同じIDの看板・データセットが既にあれば、新しく増やすのではなく中身だけ差し替える
+    // (CSVを直して再実行したときに、既存のIllustrator上のデータも追従するようにするため)
     var createdCount = 0;
+    var updatedCount = 0;
     var skippedNoId = 0;
     for (var r = 0; r < csv.records.length; r++) {
       var rec = csv.records[r];
@@ -257,30 +280,41 @@
         continue;
       }
 
-      // (1) マスターテンプレート側: 変数を更新してデータセットを作成(変数パネルでのプレビュー用)
+      // (1) マスターテンプレート側: 変数を更新し、既存データセットがあれば上書き、無ければ新規作成
       for (var key2 in boundFrames) {
         if (rec[key2] !== undefined) {
           boundFrames[key2].contents = rec[key2];
         }
       }
       try {
-        var ds = doc.dataSets.add();
-        ds.name = id;
+        var existingDs = findDataSetByName(doc, id);
+        if (existingDs) {
+          existingDs.update();
+        } else {
+          var ds = doc.dataSets.add();
+          ds.name = id;
+        }
       } catch (e) {}
 
-      // (2) 複製側: 変数バインドには頼らず、複製したテキストフレームへ直接内容を書き込む
-      var dup = template.duplicate(resultLayer, ElementPlacement.PLACEATEND);
-      dup.name = SIGN_NAME_PREFIX + id;
+      // (2) 複製側: 既存の「看板_<ID>」があればテキストだけ差し替え、無ければ新規複製
+      var signName = SIGN_NAME_PREFIX + id;
+      var target = findItemByName(resultLayer, signName);
+      if (target) {
+        updatedCount++;
+      } else {
+        target = template.duplicate(resultLayer, ElementPlacement.PLACEATEND);
+        target.name = signName;
+        target.translate(offsetPt * createdCount, -offsetPt * createdCount);
+        createdCount++;
+      }
+
       var dupFrames = {};
-      collectNamedTextFrames(dup, dupFrames);
+      collectNamedTextFrames(target, dupFrames);
       for (var key3 in dupFrames) {
         if (rec[key3] !== undefined) {
           dupFrames[key3].contents = rec[key3];
         }
       }
-      dup.translate(offsetPt * createdCount, -offsetPt * createdCount);
-
-      createdCount++;
     }
 
     // マスターテンプレートは1件目のデータセットを表示し、見た目を分かりやすい状態に戻す
@@ -290,7 +324,9 @@
       }
     } catch (e) {}
 
-    var message = createdCount + "件の看板を「" + RESULT_LAYER_NAME + "」レイヤーに複製しました。\n";
+    var message = "";
+    if (createdCount > 0) message += createdCount + "件の看板を新規作成しました。\n";
+    if (updatedCount > 0) message += updatedCount + "件の既存の看板の内容を更新しました。\n";
     message += "マスターテンプレート側は「ウィンドウ > 変数」パネルから、各データセットを選んでプレビュー・手直しできます。";
     if (skippedNoId > 0) {
       message += "\nID未設定のため" + skippedNoId + "件をスキップしました。";
