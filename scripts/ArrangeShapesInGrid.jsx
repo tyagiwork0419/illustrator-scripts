@@ -5,9 +5,9 @@
 //
 // 並べる順番は2種類から選べる:
 //   ・名前順(自然順ソート。例:「看板_2」→「看板_10」の順)
-//   ・現在の位置順(現在のX,Y座標から、上→下、同じ行なら左→右の読み順を推定)。
-//     厳密に同じY座標でなくても、だいたい同じ高さのものは同じ行とみなしてグループ化するため、
-//     手動でおおよそ格子状に配置済みのものを整える用途にも使える
+//   ・現在の位置順(現在のX,Y座標から読み順を推定)。指定した列数/行数で単純に区切って
+//     行(または列)を決めるため、厳密に同じ高さに並んでいなくても、
+//     手動でおおよそ格子状に配置済みのものを整える用途に使える
 //
 // 並べる方向も2種類から選べる(上で決めた並び順を、新しいグリッドにどう敷き詰めるか):
 //   ・横方向(行優先): 左から右へ並べ、指定列数に達したら次の行へ
@@ -20,7 +20,6 @@
 
 (function () {
   var DEFAULT_GAP_MM = 5; // セル間の間隔
-  var ROW_GROUPING_RATIO = 0.5; // 現在の位置順で「同じ行」とみなす許容誤差 = 選択オブジェクトの平均高さ × この割合
 
   function mm2pt(mm) {
     return mm * 2.834645669291339;
@@ -53,43 +52,28 @@
     return sorted;
   }
 
-  // 現在のX,Y座標から、上→下、同じ行なら左→右の読み順に並べ替える。
-  // 完全に同じY座標でなくても、平均の高さのROW_GROUPING_RATIO倍以内の差なら同じ行とみなす
-  function sortByPosition(items) {
-    var n = items.length;
-    if (n === 0) return [];
-
-    var totalHeight = 0;
-    for (var i = 0; i < n; i++) {
-      var gb = items[i].geometricBounds; // [left, top, right, bottom]
-      totalHeight += gb[1] - gb[3];
+  // 現在のX,Y座標から読み順に並べ替える。行・列を推測するのではなく、
+  // 指定された列数(行優先の場合)/行数(列優先の場合)でそのまま区切ることで行・列を決める。
+  // 行優先: Yの降順(上から下)に並べたものを列数ごとに区切り、各行の中をXの昇順(左から右)に並べ替える
+  // 列優先: Xの昇順(左から右)に並べたものを行数ごとに区切り、各列の中をYの降順(上から下)に並べ替える
+  function sortByPosition(items, direction, count) {
+    var primary, secondary;
+    if (direction === "column") {
+      primary = function (a, b) { return a.geometricBounds[0] - b.geometricBounds[0]; }; // X昇順
+      secondary = function (a, b) { return b.geometricBounds[1] - a.geometricBounds[1]; }; // Y降順
+    } else {
+      primary = function (a, b) { return b.geometricBounds[1] - a.geometricBounds[1]; }; // Y降順
+      secondary = function (a, b) { return a.geometricBounds[0] - b.geometricBounds[0]; }; // X昇順
     }
-    var tolerance = (totalHeight / n) * ROW_GROUPING_RATIO;
 
-    var byTop = items.slice();
-    byTop.sort(function (a, b) {
-      return b.geometricBounds[1] - a.geometricBounds[1];
-    });
-
-    var rows = [];
-    var currentRow = null;
-    var currentRowTop = null;
-    for (var j = 0; j < byTop.length; j++) {
-      var top = byTop[j].geometricBounds[1];
-      if (currentRow === null || currentRowTop - top > tolerance) {
-        currentRow = [];
-        rows.push(currentRow);
-        currentRowTop = top;
-      }
-      currentRow.push(byTop[j]);
-    }
+    var sorted = items.slice();
+    sorted.sort(primary);
 
     var result = [];
-    for (var r = 0; r < rows.length; r++) {
-      rows[r].sort(function (a, b) {
-        return a.geometricBounds[0] - b.geometricBounds[0];
-      });
-      result = result.concat(rows[r]);
+    for (var i = 0; i < sorted.length; i += count) {
+      var chunk = sorted.slice(i, i + count);
+      chunk.sort(secondary);
+      result = result.concat(chunk);
     }
     return result;
   }
@@ -185,7 +169,9 @@
     var options = showOptionsDialog(defaultCount);
     if (!options) return; // キャンセル
 
-    items = options.order === "position" ? sortByPosition(items) : sortByName(items);
+    items = options.order === "position"
+      ? sortByPosition(items, options.direction, options.count)
+      : sortByName(items);
     var gapPt = mm2pt(options.gapMm);
 
     // セルの大きさは、選択オブジェクトの中で最大の幅・高さに揃える(サイズがまちまちでも重ならないように)
